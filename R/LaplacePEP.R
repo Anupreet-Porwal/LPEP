@@ -181,67 +181,110 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
     #### Update Gamma ####
     start_time <- Sys.time()
-    gam.prop <- proposal.gamma(gam)
+    if(p<5){
+      gam.all <- expand.grid(replicate(p, 0:1, simplify = FALSE))
+      all.mod <- apply(gam.all[-1, ], 1, function(gam){
+        glm(ystar~x[ ,as.logical(gam)],family = binomial(link = "logit"))})
+      all.mod <- append(list(`1`=glm(ystar~1,family = binomial(link = "logit"))),all.mod)
+      kap=y-n_i/2
+      gam.logprob <- lapply(all.mod, FUN = function(mod){
+        X.mod <- model.matrix(mod)
+        if(exact.mixture.g==TRUE | seb.held==TRUE){
+          mz.mod <- rep(0, length(ystar))
+        }else{
+          mz.mod <- mod$linear.predictors
+        }
+        if(seb.held==FALSE){
+          hessian.mod <-  t(X.mod)%*%
+            diag(mod$fitted.values*(1-mod$fitted.values))%*% X.mod
+        }else{
+          hessian.mod <-  0.25*(t(X.mod)%*%  X.mod)
+        }
+        Vz.mod <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.mod, U=X.mod,V=t(X.mod))
 
-    x.prop = x[ ,as.logical(gam.prop)]
-    x.curr = x[ ,as.logical(gam)]
 
-    if(sum(gam.prop)==0){
-      m.prop <- glm(ystar~1,family = binomial(link = "logit"))
+        z=kap/omega
+        if(model.prior=="beta-binomial"){
+          oj.num.log = -lchoose(p,ncol(X.mod)-1) -0.5*t(z-mz.mod)%*%
+            solve(Vz.mod)%*% (z-mz.mod) - 0.5*
+            determinant(Vz.mod,logarithm=TRUE)$modulus
+        }else if (model.prior=="Uniform"){
+          oj.num.log = -0.5*t(z-mz.mod)%*%
+            solve(Vz.mod)%*% (z-mz.mod) - 0.5*
+            determinant(Vz.mod,logarithm=TRUE)$modulus
+        }
+        return(oj.num.log)
+
+      })
+      gam.logprob <- unlist(lapply(gam.logprob, as.numeric))
+      gam.logprob <- gam.logprob-gam.logprob[1]
+      gam.prob <- exp(gam.logprob)/sum(exp(gam.logprob))
+      gam <- as.matrix(gam.all[sample(1:nrow(gam.all),1,prob = gam.prob), ])
+
     }else{
-      m.prop <- glm(ystar~x.prop,family = binomial(link = "logit"))
+      gam.prop <- proposal.gamma(gam)
+
+      x.prop = x[ ,as.logical(gam.prop)]
+      x.curr = x[ ,as.logical(gam)]
+
+      if(sum(gam.prop)==0){
+        m.prop <- glm(ystar~1,family = binomial(link = "logit"))
+      }else{
+        m.prop <- glm(ystar~x.prop,family = binomial(link = "logit"))
+      }
+
+
+      if(sum(gam)==0){
+        m.curr <- glm(ystar~1,family = binomial(link = "logit"))
+      }else{
+        m.curr <- glm(ystar~x.curr,family = binomial(link = "logit"))
+      }
+
+
+
+      X.prop <- model.matrix(m.prop) # with intercept
+      X.curr <- model.matrix(m.curr) # with intercept
+      if(exact.mixture.g==TRUE | seb.held==TRUE){
+        mz.prop <- rep(0, length(y))
+        mz.curr <- rep(0, length(y))
+      }else{
+        mz.prop <- m.prop$linear.predictors
+        mz.curr <- m.curr$linear.predictors
+      }
+      if(seb.held==FALSE){
+        hessian.prop <-  t(X.prop)%*% diag(m.prop$fitted.values*(1-m.prop$fitted.values))%*% X.prop
+        hessian.curr <-  t(X.curr)%*% diag(m.curr$fitted.values*(1-m.curr$fitted.values))%*% X.curr
+      }else{
+        hessian.prop <-  0.25*(t(X.prop)%*%  X.prop)
+        hessian.curr <-  0.25*(t(X.curr)%*% X.curr)
+      }
+
+
+      Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.prop, U=X.prop,V=t(X.prop))
+      Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.curr, U=X.curr,V=t(X.curr))
+      #Vz.prop <- diag(omega^{-1})+delta*(X.prop %*% vcov(m.prop) %*% t(X.prop))
+      #Vz.curr <- diag(omega^{-1})+delta*(X.curr %*% vcov(m.curr) %*% t(X.curr))
+
+      kap=y-n_i/2
+      z=kap/omega
+      if(model.prior=="beta-binomial"){
+        oj.num.log = -lchoose(p,sum(gam.prop)) -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
+        oj.den.log = -lchoose(p,sum(gam)) -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
+      }else if (model.prior=="Uniform"){
+        oj.num.log =  -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
+        oj.den.log =  -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
+      }
+      #oj=as.numeric(exp(oj.num.log-oj.den.log))
+      #print(oj)
+      u.gam <- runif(1)
+      a.gam.prob <- min(as.numeric(exp(oj.num.log-oj.den.log)),1)
+      if(u.gam<=a.gam.prob){
+        gam <- gam.prop
+      }else{
+        gam <- gam
+      }
     }
 
-
-    if(sum(gam)==0){
-      m.curr <- glm(ystar~1,family = binomial(link = "logit"))
-    }else{
-      m.curr <- glm(ystar~x.curr,family = binomial(link = "logit"))
-    }
-
-
-
-    X.prop <- model.matrix(m.prop) # with intercept
-    X.curr <- model.matrix(m.curr) # with intercept
-    if(exact.mixture.g==TRUE | seb.held==TRUE){
-      mz.prop <- rep(0, length(y))
-      mz.curr <- rep(0, length(y))
-    }else{
-      mz.prop <- m.prop$linear.predictors
-      mz.curr <- m.curr$linear.predictors
-    }
-    if(seb.held==FALSE){
-      hessian.prop <-  t(X.prop)%*% diag(m.prop$fitted.values*(1-m.prop$fitted.values))%*% X.prop
-      hessian.curr <-  t(X.curr)%*% diag(m.curr$fitted.values*(1-m.curr$fitted.values))%*% X.curr
-    }else{
-      hessian.prop <-  0.25*(t(X.prop)%*%  X.prop)
-      hessian.curr <-  0.25*(t(X.curr)%*% X.curr)
-    }
-
-
-    Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.prop, U=X.prop,V=t(X.prop))
-    Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.curr, U=X.curr,V=t(X.curr))
-    #Vz.prop <- diag(omega^{-1})+delta*(X.prop %*% vcov(m.prop) %*% t(X.prop))
-    #Vz.curr <- diag(omega^{-1})+delta*(X.curr %*% vcov(m.curr) %*% t(X.curr))
-
-    kap=y-n_i/2
-    z=kap/omega
-    if(model.prior=="beta-binomial"){
-      oj.num.log = -lchoose(p,sum(gam.prop)) -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
-      oj.den.log = -lchoose(p,sum(gam)) -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
-    }else if (model.prior=="Uniform"){
-      oj.num.log =  -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
-      oj.den.log =  -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
-    }
-    #oj=as.numeric(exp(oj.num.log-oj.den.log))
-    #print(oj)
-    u.gam <- runif(1)
-    a.gam.prob <- min(as.numeric(exp(oj.num.log-oj.den.log)),1)
-    if(u.gam<=a.gam.prob){
-      gam <- gam.prop
-    }else{
-      gam <- gam
-    }
     end_time <- Sys.time()
     timemat[t,1] <- end_time-start_time
 
