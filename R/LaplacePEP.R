@@ -217,7 +217,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
       })
       gam.logprob <- unlist(lapply(gam.logprob, as.numeric))
-      gam.logprob <- gam.logprob-gam.logprob[1]
+      #gam.logprob <- gam.logprob-gam.logprob[1]
       gam.prob <- exp(gam.logprob)/sum(exp(gam.logprob))
       gam <- as.matrix(gam.all[sample(1:nrow(gam.all),1,prob = gam.prob), ])
 
