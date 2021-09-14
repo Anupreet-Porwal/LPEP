@@ -5,6 +5,23 @@ library(WoodburyMatrix)
 library(testit)
 library(detectseparation)
 
+rrefnorm <- function(n,a=0, mean=0, sd=1){
+  eps <- rnorm(n)
+  g=a+abs(mean+sd*eps-a)
+  return(g)
+}
+
+drefnorm <- function(x,a=0,mean=0,sd=1,logarithm=FALSE){
+  if(x>=a){
+    val <- dnorm(x,mean=mean,sd=sd)+dnorm(x,mean=2*a-mean, sd=sd)
+  }else{
+    val <- 0
+  }
+  if(logarithm==TRUE){return(log(val))}
+  return(val)
+}
+
+
 dhypergn <- function(g, alpha=4,n,logarithm=FALSE){
   val <- (alpha-2)/(2*n)*(1/(1+g/n))^(alpha/2)
   if(logarithm==TRUE){
@@ -12,6 +29,23 @@ dhypergn <- function(g, alpha=4,n,logarithm=FALSE){
   }
   return (val)
 }
+
+
+drobust <- function(g, a=0.5,b=1,n,rho,logarithm=FALSE){
+  if(g>rho*(b+n)-b){
+    val <- a*(rho*(b+n))^a*(g+b)^(-a-1)
+  }else{ val <- 0}
+
+  if(logarithm==TRUE){
+    if(g>rho*(b+n)-b){
+      val <- log(a)+a*log(rho*(b+n))-(a+1)*log(g+b)
+    }else{
+      val <- -Inf
+    }
+  }
+  return (val)
+}
+
 
 
 ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,local){
@@ -50,10 +84,18 @@ delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat,gam,hype
   }
 
 
-  if(hyper.type=="gamma") {prior.d <- dgamma(delta.new/n, shape = hyper.param, rate = hyper.param, log = TRUE) - dgamma(delta.old/n, shape = hyper.param, rate = hyper.param, log = TRUE)}
-  if (hyper.type=="hyper-g/n") {prior.d <-  dhypergn(delta.new,alpha = hyper.param,n=n,logarithm = TRUE)- dhypergn(delta.old,alpha = hyper.param,n=n,logarithm = TRUE)}
-  if (hyper.type=="hyper-g") {prior.d <-  dhypergn(delta.new,alpha = hyper.param,n=1,logarithm = TRUE)- dhypergn(delta.old,alpha = hyper.param,n=1,logarithm = TRUE)}
-
+  if(hyper.type=="gamma") {prior.d <-
+    dgamma(delta.new/n, shape = hyper.param, rate = hyper.param, log = TRUE) -
+    dgamma(delta.old/n, shape = hyper.param, rate = hyper.param, log = TRUE)}
+  if (hyper.type=="hyper-g/n") {prior.d <-
+    dhypergn(delta.new,alpha = hyper.param,n=n,logarithm = TRUE)-
+    dhypergn(delta.old,alpha = hyper.param,n=n,logarithm = TRUE)}
+  if (hyper.type=="hyper-g") {prior.d <-
+    dhypergn(delta.new,alpha = hyper.param,n=1,logarithm = TRUE)-
+    dhypergn(delta.old,alpha = hyper.param,n=1,logarithm = TRUE)}
+  if(hyper.type=="robust"){prior.d <-
+    drobust(delta.new, n=n, rho=1/(sum(gam)+1),logarithm = TRUE)-
+    drobust(delta.old, n=n, rho=1/(sum(gam)+1),logarithm = TRUE)}
   if(exact.mixture.g==TRUE){
     beta.star <- rep(0, length(mod1$coefficients))
     inf.mat <- vcov(mod1)
@@ -67,10 +109,10 @@ delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat,gam,hype
   }
 
 
-  log.num <- prior.d + dmvnorm(t(bmat), mean = beta.star, sigma = delta.new*inf.mat,log=TRUE)+
-    + dlnorm(delta.old, meanlog = log(delta.new),sdlog = 0.25, log = TRUE)#log(dgamma(delta.old,delta.new,1))
-  log.den <- dmvnorm(t(bmat), mean = beta.star, sigma = delta.old*inf.mat,log=TRUE)+
-    + dlnorm(delta.new, meanlog = log(delta.old),sdlog = 0.25, log = TRUE)#log(dgamma(delta.new,delta.old,1))
+  log.num <- prior.d + dmvnorm(t(bmat), mean = beta.star, sigma = delta.new*inf.mat,log=TRUE)
+    #+ dlnorm(delta.old, meanlog = log(delta.new),sdlog = 0.25, log = TRUE)#log(dgamma(delta.old,delta.new,1))
+  log.den <- dmvnorm(t(bmat), mean = beta.star, sigma = delta.old*inf.mat,log=TRUE)
+    #+ dlnorm(delta.new, meanlog = log(delta.old),sdlog = 0.25, log = TRUE)#log(dgamma(delta.new,delta.old,1))
 
   a.p.delta <- min(exp(log.num-log.den),1)
 
@@ -148,6 +190,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
   n <- length(y)
   p <- ncol(x)
+  tau=n/2
   # create matrix to save variables
   GammaSave = matrix(NA, nmc, p)
   BetaSave = matrix(NA, nmc, p+1)
@@ -179,7 +222,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
     if (t%%1000 == 0){cat(paste(t," "))}
 
-    #### Update Gamma ####
+    #### Update Gamma and delta jointly ####
     start_time <- Sys.time()
     if(p<5){
       gam.all <- expand.grid(replicate(p, 0:1, simplify = FALSE))
@@ -222,7 +265,36 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       gam <- as.matrix(gam.all[sample(1:nrow(gam.all),1,prob = gam.prob), ])
 
     }else{
+      # Propose gamma
       gam.prop <- proposal.gamma(gam)
+
+      if(hyper==TRUE){
+        # Propose delta | gam
+        if(hyper.type=="robust"){
+          a.prop <- (n-sum(gam.prop))/(sum(gam.prop)+1)
+          a.curr <- (n-sum(gam))/(sum(gam)+1)
+        }else if(hyper.type=="hyper-g"|hyper.type=="hyper-g/n"|hyper.type=="gamma"){
+          a.prop <- a.curr <- 0
+        }
+
+        delta.cand <- rrefnorm(1, a=a.prop, mean=delta, sd=tau)
+
+        if(hyper.type=="gamma") {prior.d <-
+          dgamma(delta.cand/n, shape = hyper.param, rate = hyper.param, log = TRUE) -
+          dgamma(delta/n, shape = hyper.param, rate = hyper.param, log = TRUE)}
+        if (hyper.type=="hyper-g/n") {prior.d <-
+          dhypergn(delta.cand,alpha = hyper.param,n=n,logarithm = TRUE)-
+          dhypergn(delta,alpha = hyper.param,n=n,logarithm = TRUE)}
+        if (hyper.type=="hyper-g") {prior.d <-
+          dhypergn(delta.cand,alpha = hyper.param,n=1,logarithm = TRUE)-
+          dhypergn(delta,alpha = hyper.param,n=1,logarithm = TRUE)}
+        if(hyper.type=="robust"){prior.d <-
+          drobust(delta.cand, n=n, rho=1/(sum(gam.prop)+1),logarithm = TRUE)-
+          drobust(delta, n=n, rho=1/(sum(gam)+1),logarithm = TRUE)}
+
+      }else{
+        delta.cand <- delta
+      }
 
       x.prop = x[ ,as.logical(gam.prop)]
       x.curr = x[ ,as.logical(gam)]
@@ -239,8 +311,6 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       }else{
         m.curr <- glm(ystar~x.curr,family = binomial(link = "logit"))
       }
-
-
 
       X.prop <- model.matrix(m.prop) # with intercept
       X.curr <- model.matrix(m.curr) # with intercept
@@ -259,20 +329,34 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
         hessian.curr <-  0.25*(t(X.curr)%*% X.curr)
       }
 
-
-      Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.prop, U=X.prop,V=t(X.prop))
+      Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta.cand*hessian.prop, U=X.prop,V=t(X.prop))
       Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.curr, U=X.curr,V=t(X.curr))
       #Vz.prop <- diag(omega^{-1})+delta*(X.prop %*% vcov(m.prop) %*% t(X.prop))
       #Vz.curr <- diag(omega^{-1})+delta*(X.curr %*% vcov(m.curr) %*% t(X.curr))
 
       kap=y-n_i/2
       z=kap/omega
+
+
       if(model.prior=="beta-binomial"){
-        oj.num.log = -lchoose(p,sum(gam.prop)) -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
-        oj.den.log = -lchoose(p,sum(gam)) -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
+        oj.num.log = -lchoose(p,sum(gam.prop)) -0.5*
+          t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) -
+          0.5*determinant(Vz.prop,logarithm=TRUE)$modulus+
+          ifelse(hyper==TRUE,prior.d+
+                   drefnorm(delta, a=a.curr, mean=delta.cand,sd=tau,logarithm=TRUE) ,0)
+
+        oj.den.log = -lchoose(p,sum(gam)) -0.5*
+          t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) -
+          0.5*determinant(Vz.curr,logarithm=TRUE)$modulus+
+          ifelse(hyper==TRUE,drefnorm(delta.cand, a=a.prop, mean=delta,sd=tau,logarithm=TRUE),0)
       }else if (model.prior=="Uniform"){
-        oj.num.log =  -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) - 0.5*determinant(Vz.prop,logarithm=TRUE)$modulus
-        oj.den.log =  -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) - 0.5*determinant(Vz.curr,logarithm=TRUE)$modulus
+        oj.num.log =  -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) -
+          0.5*determinant(Vz.prop,logarithm=TRUE)$modulus+
+          ifelse(hyper==TRUE,prior.d+
+                   drefnorm(delta, a=a.curr, mean=delta.cand,sd=tau,logarithm=TRUE),0)
+        oj.den.log =  -0.5*t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) -
+          0.5*determinant(Vz.curr,logarithm=TRUE)$modulus+
+          ifelse(hyper==TRUE,drefnorm(delta.cand, a=a.prop, mean=delta,sd=tau,logarithm=TRUE),0)
       }
       #oj=as.numeric(exp(oj.num.log-oj.den.log))
       #print(oj)
@@ -280,8 +364,10 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       a.gam.prob <- min(as.numeric(exp(oj.num.log-oj.den.log)),1)
       if(u.gam<=a.gam.prob){
         gam <- gam.prop
+        delta <- delta.cand
       }else{
         gam <- gam
+        delta <- delta
       }
     }
 
@@ -376,9 +462,15 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
     start_time <- Sys.time()
 
     if(hyper==TRUE){
+      # Propose delta | gam
+      if(hyper.type=="robust"){
+        a.curr <- (n-sum(gam))/(sum(gam)+1)
+      }else if(hyper.type=="hyper-g"|hyper.type=="hyper-g/n"|hyper.type=="gamma"){
+        a.prop <- a.curr <- 0
+      }
 
-      # Following Fouskakis et Al 2018 for this step
-      delta.cand <- rlnorm(1,meanlog = log(delta),sdlog = 0.25)#rgamma(1,delta,1)
+      delta.cand <- rrefnorm(1, a=a.prop, mean=delta, sd=tau)
+
       #delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat)
       a.prob.delta <- delta.acceptance.prob(delta.cand,delta,b,ystar,x,gam,hyper.type,hyper.param,exact.mixture.g,seb.held)
       if(runif(1)<=a.prob.delta){
