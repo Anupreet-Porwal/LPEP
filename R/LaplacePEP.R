@@ -5,6 +5,8 @@ library(WoodburyMatrix)
 library(testit)
 library(detectseparation)
 
+
+
 rrefnorm <- function(n,a=0, mean=0, sd=1){
   eps <- rnorm(n)
   g=a+abs(mean+sd*eps-a)
@@ -129,9 +131,15 @@ proposal.gamma <- function(gam, d=4){
   s <- resample(1:2,1, prob = prob2)
   # Use technique of George mchlloch stat sinaca paper  eq 46 if s==1
   if(s==1){
+    if(p<d){
+      d=p
+      prob1 <- prob1[1:d]/sum(prob1[1:d])
+    }
     d0 <- resample(1:d,1, prob=prob1)
     ind <- resample(1:p,d0)
     gam[ind]=!gam[ind]
+
+
 
   }else if(s==2){ # swap one entry from active set with one entry from non-active set randomly
     if(all(gam==1)){
@@ -224,47 +232,47 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
     #### Update Gamma and delta jointly ####
     start_time <- Sys.time()
-    if(p<5){
-      gam.all <- expand.grid(replicate(p, 0:1, simplify = FALSE))
-      all.mod <- apply(gam.all[-1, ], 1, function(gam){
-        glm(ystar~x[ ,as.logical(gam)],family = binomial(link = "logit"))})
-      all.mod <- append(list(`1`=glm(ystar~1,family = binomial(link = "logit"))),all.mod)
-      kap=y-n_i/2
-      gam.logprob <- lapply(all.mod, FUN = function(mod){
-        X.mod <- model.matrix(mod)
-        if(exact.mixture.g==TRUE | seb.held==TRUE){
-          mz.mod <- rep(0, length(ystar))
-        }else{
-          mz.mod <- mod$linear.predictors
-        }
-        if(seb.held==FALSE){
-          hessian.mod <-  t(X.mod)%*%
-            diag(mod$fitted.values*(1-mod$fitted.values))%*% X.mod
-        }else{
-          hessian.mod <-  0.25*(t(X.mod)%*%  X.mod)
-        }
-        Vz.mod <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.mod, U=X.mod,V=t(X.mod))
-
-
-        z=kap/omega
-        if(model.prior=="beta-binomial"){
-          oj.num.log = -lchoose(p,ncol(X.mod)-1) -0.5*t(z-mz.mod)%*%
-            solve(Vz.mod)%*% (z-mz.mod) - 0.5*
-            determinant(Vz.mod,logarithm=TRUE)$modulus
-        }else if (model.prior=="Uniform"){
-          oj.num.log = -0.5*t(z-mz.mod)%*%
-            solve(Vz.mod)%*% (z-mz.mod) - 0.5*
-            determinant(Vz.mod,logarithm=TRUE)$modulus
-        }
-        return(oj.num.log)
-
-      })
-      gam.logprob <- unlist(lapply(gam.logprob, as.numeric))
-      #gam.logprob <- gam.logprob-gam.logprob[1]
-      gam.prob <- exp(gam.logprob)/sum(exp(gam.logprob))
-      gam <- as.matrix(gam.all[sample(1:nrow(gam.all),1,prob = gam.prob), ])
-
-    }else{
+    # if(p<5){
+    #   gam.all <- expand.grid(replicate(p, 0:1, simplify = FALSE))
+    #   all.mod <- apply(gam.all[-1, ], 1, function(gam){
+    #     glm(ystar~x[ ,as.logical(gam)],family = binomial(link = "logit"))})
+    #   all.mod <- append(list(`1`=glm(ystar~1,family = binomial(link = "logit"))),all.mod)
+    #   kap=y-n_i/2
+    #   gam.logprob <- lapply(all.mod, FUN = function(mod){
+    #     X.mod <- model.matrix(mod)
+    #     if(exact.mixture.g==TRUE | seb.held==TRUE){
+    #       mz.mod <- rep(0, length(ystar))
+    #     }else{
+    #       mz.mod <- mod$linear.predictors
+    #     }
+    #     if(seb.held==FALSE){
+    #       hessian.mod <-  t(X.mod)%*%
+    #         diag(mod$fitted.values*(1-mod$fitted.values))%*% X.mod
+    #     }else{
+    #       hessian.mod <-  0.25*(t(X.mod)%*%  X.mod)
+    #     }
+    #     Vz.mod <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.mod, U=X.mod,V=t(X.mod))
+    #
+    #
+    #     z=kap/omega
+    #     if(model.prior=="beta-binomial"){
+    #       oj.num.log = -lchoose(p,ncol(X.mod)-1) -0.5*t(z-mz.mod)%*%
+    #         solve(Vz.mod)%*% (z-mz.mod) - 0.5*
+    #         determinant(Vz.mod,logarithm=TRUE)$modulus
+    #     }else if (model.prior=="Uniform"){
+    #       oj.num.log = -0.5*t(z-mz.mod)%*%
+    #         solve(Vz.mod)%*% (z-mz.mod) - 0.5*
+    #         determinant(Vz.mod,logarithm=TRUE)$modulus
+    #     }
+    #     return(oj.num.log)
+    #
+    #   })
+    #   gam.logprob <- unlist(lapply(gam.logprob, as.numeric))
+    #   #gam.logprob <- gam.logprob-gam.logprob[1]
+    #   gam.prob <- exp(gam.logprob)/sum(exp(gam.logprob))
+    #   gam <- as.matrix(gam.all[sample(1:nrow(gam.all),1,prob = gam.prob), ])
+    #
+    #}else{
       # Propose gamma
       gam.prop <- proposal.gamma(gam)
 
@@ -369,7 +377,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
         gam <- gam
         delta <- delta
       }
-    }
+#    }
 
     end_time <- Sys.time()
     timemat[t,1] <- end_time-start_time
