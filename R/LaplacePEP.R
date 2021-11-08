@@ -339,7 +339,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
       Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta.cand*hessian.prop, U=X.prop,V=t(X.prop))
       Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.curr, U=X.curr,V=t(X.curr))
-      #Vz.prop <- diag(omega^{-1})+delta*(X.prop %*% vcov(m.prop) %*% t(X.prop))
+      #Vz.prop <- diag(omega^{-1})+delta.cand*(X.prop %*% vcov(m.prop) %*% t(X.prop))
       #Vz.curr <- diag(omega^{-1})+delta*(X.curr %*% vcov(m.curr) %*% t(X.curr))
 
       kap=y-n_i/2
@@ -408,8 +408,8 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       beta.hat <- mod.gam$coefficients
     }
 
-
-    V.omega.inv <- WoodburyMatrix(A=delta*prior.vcov, B=diag(omega^(-1)),U=t(X.inter.gam),V=X.inter.gam)
+    V.omega.inv <- 1/delta*hess.mat+t(X.inter.gam)%*%diag(omega)%*% X.inter.gam
+    #V.omega.inv <- WoodburyMatrix(A=delta*prior.vcov, B=diag(omega^(-1)),U=t(X.inter.gam),V=X.inter.gam)
     V.omega=solve(V.omega.inv)
     V.omega <-as.matrix((V.omega+t(V.omega))/2)
     m.omega= V.omega%*%(t(X.inter.gam) %*% kap + (1/delta)*hess.mat%*%beta.hat)
