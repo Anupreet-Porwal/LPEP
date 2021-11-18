@@ -175,10 +175,17 @@ proposal.ystar <- function(y.star, pi.star, n_i, d=5){
     y.star.cand[ind]=as.numeric(!y.star.cand[ind])
 
   }else if(s==2){
-
-
-    y.star.cand <- rbinom(n, n_i,  pi.star)
-
+    
+    if(any(is.nan(pi.star))){
+      s=1
+      d0 <- resample(1:d,1, prob=prob1)
+      ind <- resample(1:n,d0)
+      y.star.cand <- y.star
+      y.star.cand[ind]=as.numeric(!y.star.cand[ind])
+    }else{
+      y.star.cand <- rbinom(n, n_i,  pi.star)  
+    }
+    
   }
   return(list(y.star.cand=y.star.cand,s=s))
 }
