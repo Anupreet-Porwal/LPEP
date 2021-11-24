@@ -1,3 +1,6 @@
+
+#### Load libraries #####
+
 library(BayesLogit)
 library(mvtnorm)
 library(robustbase)
@@ -7,12 +10,43 @@ library(detectseparation)
 
 
 
+
+#### Helper functions ####
+
+#### Draws from reflective normal distribution with left reflection ####
+# boundary a and given mean and sd
+
+#' Random generation for the reflective Gaussian distribution
+#'
+#' @param n number of observations. If length(n)>1, the length is taken to be the number required
+#' @param a left reflection boundary. Default is 0
+#' @param mean mean
+#' @param sd standard deviation
+#'
+#' @return rrefnorm generates random deviates from the specified reflective gausisan distribution
+#' @export
+#'
+#' @examples
 rrefnorm <- function(n,a=0, mean=0, sd=1){
   eps <- rnorm(n)
   g=a+abs(mean+sd*eps-a)
   return(g)
 }
 
+#### Calculates density of reflective normal distribution  with left reflection boundary ####
+#  a and given mean and sd
+#' Density calculation for the reflective Gaussian distribution
+#'
+#' @param x vector of quantiles
+#' @param a left reflection boundary default is 0
+#' @param mean mean
+#' @param sd standard deviation
+#' @param logarithm logical; if TRUE, density evaluated on log scale
+#'
+#' @return returns the density of the specified reflective Gaussian distribution at x.
+#' @export
+#'
+#' @examples
 drefnorm <- function(x,a=0,mean=0,sd=1,logarithm=FALSE){
   if(x>=a){
     val <- dnorm(x,mean=mean,sd=sd)+dnorm(x,mean=2*a-mean, sd=sd)
@@ -24,6 +58,8 @@ drefnorm <- function(x,a=0,mean=0,sd=1,logarithm=FALSE){
 }
 
 
+
+#### Calculates density of hyper-g/n prior with specified alpha and n ####
 dhypergn <- function(g, alpha=4,n,logarithm=FALSE){
   val <- (alpha-2)/(2*n)*(1/(1+g/n))^(alpha/2)
   if(logarithm==TRUE){
@@ -32,7 +68,14 @@ dhypergn <- function(g, alpha=4,n,logarithm=FALSE){
   return (val)
 }
 
+#### Draws from hyper-g/n distribution with specified alpha and n ####
+rhypergn <- function(nsamp, alpha=4,n){
+  u <- rbeta(nsamp, alpha/2-1,1)
+  return (n*u/(1-u))
+}
 
+
+#### Calculates density of a robust prior with specified a,b, rho and n ####
 drobust <- function(g, a=0.5,b=1,n,rho,logarithm=FALSE){
   if(g>rho*(b+n)-b){
     val <- a*(rho*(b+n))^a*(g+b)^(-a-1)
@@ -48,35 +91,9 @@ drobust <- function(g, a=0.5,b=1,n,rho,logarithm=FALSE){
   return (val)
 }
 
+#### Function to evaluate MH acceptance probability of the proposed delta ####
 
-
-ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,local){
-  n <- length(y.new)
-  new.sum <- sum(y.new)
-  old.sum <- sum(y.old)
-  if(sum(gam)==0){
-    mod.new <- glm(y.new~1,family = binomial(link = "logit"))
-    mod.old <- glm(y.old~1,family = binomial(link = "logit"))
-  }else{
-    mod.new <- glm(y.new~xmat[, as.logical(gam)],family = binomial(link = "logit"))
-    mod.old <- glm(y.old~xmat[, as.logical(gam)],family = binomial(link = "logit"))
-  }
-
-
-  new.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.new$coefficients, sigma = delta*vcov(mod.new),log=TRUE)
-  old.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.old$coefficients, sigma = delta*vcov(mod.old),log=TRUE)
-
-  log.num <- lgamma(new.sum+0.5)+lgamma(n-new.sum+0.5) + new.log.bgam.dens
-  +ifelse(local==2,dbinom(y.old,n_i,prob=pi.star,log=TRUE),0)#+log(dbinom(y.old,1,prob=0.5))
-  log.den <- lgamma(old.sum+0.5)+lgamma(n-old.sum+0.5) + old.log.bgam.dens
-  +ifelse(local==2,dbinom(y.new,n_i,prob=pi.star,log=TRUE),0)#+log(dbinom(y.new,1,prob=0.5))
-
-  a.p <- min(exp(log.num-log.den),1)
-
-  return (a.p)
-
-}
-
+# choices of delta allowed are gamma, hyper, hyper-g/n and robust #
 delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat,gam,hyper.type,hyper.param,exact.mixture.g,seb.held){
   n <- length(y.star)
   if(sum(gam)==0){
@@ -112,17 +129,71 @@ delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat,gam,hype
 
 
   log.num <- prior.d + dmvnorm(t(bmat), mean = beta.star, sigma = delta.new*inf.mat,log=TRUE)
-    #+ dlnorm(delta.old, meanlog = log(delta.new),sdlog = 0.25, log = TRUE)#log(dgamma(delta.old,delta.new,1))
   log.den <- dmvnorm(t(bmat), mean = beta.star, sigma = delta.old*inf.mat,log=TRUE)
-    #+ dlnorm(delta.new, meanlog = log(delta.old),sdlog = 0.25, log = TRUE)#log(dgamma(delta.new,delta.old,1))
 
   a.p.delta <- min(exp(log.num-log.den),1)
 
   return (a.p.delta)
 }
 
+#### Proposal function for imaginary samples ####
+proposal.ystar <- function(y.star, pi.star, n_i, d=5){
+  n <- length(y.star)
+  prob1 <- c(0.5,0.2,0.15,0.10,0.05)
+  prob2 <- c(0.7,0.3)
+
+  s <- resample(1:2,1, prob = prob2)
+  # Use technique of George mchlloch stat sinaca paper  eq 46 if s==1
+  # Local move
+  if(s==1){
+    d0 <- resample(1:d,1, prob=prob1)
+    ind <- resample(1:n,d0)
+    y.star.cand <- y.star
+    y.star.cand[ind]=as.numeric(!y.star.cand[ind])
+    # Global move
+  }else if(s==2){
+
+
+    y.star.cand <- rbinom(n, n_i,  pi.star)
+
+  }
+  return(list(y.star.cand=y.star.cand,s=s))
+}
+
+#### Function to evaluate MH acceptance probability of the proposed imaginary sample ####
+ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,local){
+  n <- length(y.new)
+  new.sum <- sum(y.new)
+  old.sum <- sum(y.old)
+  if(sum(gam)==0){
+    mod.new <- glm(y.new~1,family = binomial(link = "logit"))
+    mod.old <- glm(y.old~1,family = binomial(link = "logit"))
+  }else{
+    mod.new <- glm(y.new~xmat[, as.logical(gam)],family = binomial(link = "logit"))
+    mod.old <- glm(y.old~xmat[, as.logical(gam)],family = binomial(link = "logit"))
+  }
+
+
+  new.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.new$coefficients, sigma = delta*vcov(mod.new),log=TRUE)
+  old.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.old$coefficients, sigma = delta*vcov(mod.old),log=TRUE)
+
+  log.num <- lgamma(new.sum+0.5)+lgamma(n-new.sum+0.5) + new.log.bgam.dens
+  +ifelse(local==2,dbinom(y.old,n_i,prob=pi.star,log=TRUE),0)
+  log.den <- lgamma(old.sum+0.5)+lgamma(n-old.sum+0.5) + old.log.bgam.dens
+  +ifelse(local==2,dbinom(y.new,n_i,prob=pi.star,log=TRUE),0)
+
+  a.p <- min(exp(log.num-log.den),1)
+
+  return (a.p)
+
+}
+
+
+
 resample <- function(x, ...) x[sample.int(length(x), ...)]
 
+
+#### Proposal function for gamma variable ####
 proposal.gamma <- function(gam, d=4){
   p <- length(gam)
   prob1 <- c(0.6,0.2,0.15,0.05)
@@ -130,6 +201,7 @@ proposal.gamma <- function(gam, d=4){
 
   s <- resample(1:2,1, prob = prob2)
   # Use technique of George mchlloch stat sinaca paper  eq 46 if s==1
+
   if(s==1){
     if(p<d){
       d=p
@@ -140,8 +212,8 @@ proposal.gamma <- function(gam, d=4){
     gam[ind]=!gam[ind]
 
 
-
-  }else if(s==2){ # swap one entry from active set with one entry from non-active set randomly
+    # swap one entry from active set with one entry from non-active set randomly
+  }else if(s==2){
     if(all(gam==1)){
       ind <- resample(1:p,1)
       gam[ind]=0
@@ -161,51 +233,49 @@ proposal.gamma <- function(gam, d=4){
 }
 
 
-proposal.ystar <- function(y.star, pi.star, n_i, d=5){
-  n <- length(y.star)
-  prob1 <- c(0.5,0.2,0.15,0.10,0.05)
-  prob2 <- c(0.7,0.3)
-
-  s <- resample(1:2,1, prob = prob2)
-  # Use technique of George mchlloch stat sinaca paper  eq 46 if s==1
-  if(s==1){
-    d0 <- resample(1:d,1, prob=prob1)
-    ind <- resample(1:n,d0)
-    y.star.cand <- y.star
-    y.star.cand[ind]=as.numeric(!y.star.cand[ind])
-
-  }else if(s==2){
-    
-    if(any(is.nan(pi.star))){
-      s=1
-      d0 <- resample(1:d,1, prob=prob1)
-      ind <- resample(1:n,d0)
-      y.star.cand <- y.star
-      y.star.cand[ind]=as.numeric(!y.star.cand[ind])
-    }else{
-      y.star.cand <- rbinom(n, n_i,  pi.star)  
-    }
-    
-  }
-  return(list(y.star.cand=y.star.cand,s=s))
-}
-
-
-
+#### Expit function ####
 expit <- function(x){
   return(1/(1+exp(-x)))
 }
 
-rhypergn <- function(nsamp, alpha=4,n){
-  u <- rbeta(nsamp, alpha/2-1,1)
-  return (n*u/(1-u))
-}
+#### Bayesian Inference for logistic models with Laplace PEP prior methodology ####
 
-Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hyper="TRUE", hyper.type="gamma",hyper.param=NULL,exact.mixture.g=FALSE,seb.held=FALSE){
+#' Bayesian Inference for logistic models with Laplace PEP prior methodology
+
+#'
+#' @param x Matrix of covariates, dimension is n*p; Intercept does not need to be included
+#' @param y Response, a n*1 binary vector
+#' @param burn Number of burn-in MCMC iterations. Default is 1000
+#' @param nmc Number of MCMC iterations to be saved post burn-in. Default is 5000
+#' @param model.prior Family of prior distribution on the models. Currently, two choices allowed: Uniform and beta-binomial; Default is beta-binomial.
+#' @param hyper Logical; True if hyper prior on delta is specified. Default is TRUE. If FALSE, UIP version is fit.
+#' @param hyper.type If hyper= TRUE, prior type on delta can be specified here.
+#' Currently, four choices are offered: "gamma", "hyper-g", "hyper-g/n" and "robust". Under
+#' gamma prior, delta/n follows a gamma with shape and rate parameter equal to hyper.param.
+#' Under hyper-g and hyper-g/n parameter, value of a parameter is specified by hyper.param.
+#' For robust, recommended choices in Bayarri et Al 2012 for
+#' a=0.5, b=1 and rho=1/(pgam +1) are used.
+#'
+#' @param hyper.param Value of hyper-parameter for prior on delta if any.
+#' If hyper.type="gamma", shape=rate= hyper.param value and hence hyper.param>0.
+#' If hyper.type="hyper-g", or hyper.type="hyper-g/n", value of a=hyper.param and hence hyper.param >2
+#' with recommended values to be 3 or 4.
+#' @param exact.mixture.g Logical; If True, exact version of Li and Clyde (2018) mixture of g-priors
+#' is implemented using Polya-gamma augmentation instead of Laplace approximation. Default is False.
+#' @param seb.held Logical; If True, Bove et Al (2011) prior is implemented
+#'
+#' @return Laplace.pep returns a fit object. This object contains the following components:
+#'
+#' @export
+#'
+#' @examples
+Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hyper="TRUE", hyper.type="hyper-g/n",hyper.param=NULL,exact.mixture.g=FALSE,seb.held=FALSE){
 
   n <- length(y)
   p <- ncol(x)
+  # sd for delta proposal i.e. reflective gaussian sd
   tau=n/2
+
   # create matrix to save variables
   GammaSave = matrix(NA, nmc, p)
   BetaSave = matrix(NA, nmc, p+1)
@@ -214,7 +284,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
   deltaSave = matrix(NA,nmc, 1)
   timemat <- matrix(NA, nmc+burn, 5)
 
-  # Intialize
+  # Intialize parameters
   gam = rep(0,p)
   ful.mod <- glm(y~1,family = binomial(link = "logit"))
   b = c(ful.mod$coefficients,rep(0,p))
@@ -226,19 +296,22 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
   }else{
     ystar = rbinom(n,1,0.5)
   }
-  delta = n#rhypergn(1,alpha = 4,n=n)
+  delta = n
 
 
   count =0
   count2=0
   count.local=0
 
+  #### MCMC Iteration loop ####
   for(t in 1:(nmc+burn)){
 
     if (t%%1000 == 0){cat(paste(t," "))}
 
     #### Update Gamma and delta jointly ####
     start_time <- Sys.time()
+    # Code for full enumeration when p is small
+    # commented out for now; might be available in future
     # if(p<5){
     #   gam.all <- expand.grid(replicate(p, 0:1, simplify = FALSE))
     #   all.mod <- apply(gam.all[-1, ], 1, function(gam){
@@ -283,6 +356,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       # Propose gamma
       gam.prop <- proposal.gamma(gam)
 
+      # Given Gamma. propose Delta
       if(hyper==TRUE){
         # Propose delta | gam
         if(hyper.type=="robust"){
@@ -291,7 +365,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
         }else if(hyper.type=="hyper-g"|hyper.type=="hyper-g/n"|hyper.type=="gamma"){
           a.prop <- a.curr <- 0
         }
-
+        # Propose delta from reflective normal where a may depend on gamma
         delta.cand <- rrefnorm(1, a=a.prop, mean=delta, sd=tau)
 
         if(hyper.type=="gamma") {prior.d <-
@@ -346,13 +420,12 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
       Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/delta.cand*hessian.prop, U=X.prop,V=t(X.prop))
       Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/delta*hessian.curr, U=X.curr,V=t(X.curr))
-      #Vz.prop <- diag(omega^{-1})+delta.cand*(X.prop %*% vcov(m.prop) %*% t(X.prop))
-      #Vz.curr <- diag(omega^{-1})+delta*(X.curr %*% vcov(m.curr) %*% t(X.curr))
 
       kap=y-n_i/2
       z=kap/omega
 
-
+      # Calculate acceptance probability for (gam.prop,delta.cand)
+      # under beta-binomial
       if(model.prior=="beta-binomial"){
         oj.num.log = -lchoose(p,sum(gam.prop)) -0.5*
           t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) -
@@ -364,7 +437,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
           t(z-mz.curr)%*%solve(Vz.curr)%*% (z-mz.curr) -
           0.5*determinant(Vz.curr,logarithm=TRUE)$modulus+
           ifelse(hyper==TRUE,drefnorm(delta.cand, a=a.prop, mean=delta,sd=tau,logarithm=TRUE),0)
-      }else if (model.prior=="Uniform"){
+      }else if (model.prior=="Uniform"){ # Under Uniform model prior
         oj.num.log =  -0.5*t(z-mz.prop)%*% solve(Vz.prop)%*% (z-mz.prop) -
           0.5*determinant(Vz.prop,logarithm=TRUE)$modulus+
           ifelse(hyper==TRUE,prior.d+
@@ -373,8 +446,6 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
           0.5*determinant(Vz.curr,logarithm=TRUE)$modulus+
           ifelse(hyper==TRUE,drefnorm(delta.cand, a=a.prop, mean=delta,sd=tau,logarithm=TRUE),0)
       }
-      #oj=as.numeric(exp(oj.num.log-oj.den.log))
-      #print(oj)
       u.gam <- runif(1)
       a.gam.prob <- min(as.numeric(exp(oj.num.log-oj.den.log)),1)
       if(u.gam<=a.gam.prob){
@@ -416,6 +487,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
     }
 
     V.omega.inv <- 1/delta*hess.mat+t(X.inter.gam)%*%diag(omega)%*% X.inter.gam
+    # Alternate version using Woodbury Matrix package
     #V.omega.inv <- WoodburyMatrix(A=delta*prior.vcov, B=diag(omega^(-1)),U=t(X.inter.gam),V=X.inter.gam)
     V.omega=solve(V.omega.inv)
     V.omega <-as.matrix((V.omega+t(V.omega))/2)
@@ -451,14 +523,13 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
       y.star.cand <- prop.obj$y.star.cand
       local <- prop.obj$s # s=1 implies local vs s=2 implies global
 
+      # Check if proposed ystar causes separation
       m.full <- glm(y.star.cand~x,family = binomial(link = "logit"),method = "detect_separation", solver="glpk")
-
+      # If yes, continue with existing one
       if(m.full$separation==TRUE){
-        #print("Hello")
-        ystar <- ystar
-        #warncount=FALSE
+         ystar <- ystar
       }else{
-        #ystar.acceptance.prob <- function(y.new,y.old,xmat, bmat,delta,n_i,pi.star)
+        # Else calculate acceptance probability for proposed imaginary sample
         a.prob <- ystar.acceptance.prob(y.star.cand,ystar,x,gam,b, delta, n_i, pi.star,local)
         if(runif(1)<=a.prob){
           count=count+1
@@ -477,16 +548,17 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
     start_time <- Sys.time()
 
     if(hyper==TRUE){
-      # Propose delta | gam
+      # Propose delta | current value of gamma
+      # decide choice of left reflection boundary for reflective Gaussian
+      # based on hyper prior type
       if(hyper.type=="robust"){
         a.curr <- (n-sum(gam))/(sum(gam)+1)
       }else if(hyper.type=="hyper-g"|hyper.type=="hyper-g/n"|hyper.type=="gamma"){
         a.prop <- a.curr <- 0
       }
-
+      # Propose new value of delta
       delta.cand <- rrefnorm(1, a=a.prop, mean=delta, sd=tau)
-
-      #delta.acceptance.prob <- function(delta.new,delta.old,bmat, y.star,xmat)
+    # Calculate acceptance probability for the new value of delta
       a.prob.delta <- delta.acceptance.prob(delta.cand,delta,b,ystar,x,gam,hyper.type,hyper.param,exact.mixture.g,seb.held)
       if(runif(1)<=a.prob.delta){
         count2=count2+1
@@ -502,7 +574,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
     betastore=rep(0,p+1)
 
-    #Save results
+    #Save results post burn-in
     if(t > burn){
       GammaSave[t-burn, ] = gam
       count3=1
@@ -522,6 +594,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
 
   }
 
+  # Store results as a list
   result <- list("BetaSamples"=BetaSave,
                  "GammaSamples"=GammaSave,
                  "OmegaSamples"=OmegaSave,
@@ -531,7 +604,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
                  "acc.ratio.ystar.local"=count.local/(nmc+burn),
                  "acc.ratio.delta"=count2/(nmc+burn),
                  "timemat"=timemat)
-
+  # Return object
   return(result)
 
 }
