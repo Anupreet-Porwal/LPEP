@@ -161,7 +161,7 @@ proposal.ystar <- function(y.star, pi.star, n_i, d=5){
 }
 
 #### Function to evaluate MH acceptance probability of the proposed imaginary sample ####
-ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,local){
+ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,local,mystar.mod){
   n <- length(y.new)
   new.sum <- sum(y.new)
   old.sum <- sum(y.old)
@@ -173,13 +173,21 @@ ystar.acceptance.prob <- function(y.new,y.old,xmat,gam, bmat,delta,n_i,pi.star,l
     mod.old <- glm(y.old~xmat[, as.logical(gam)],family = binomial(link = "logit"))
   }
 
+  if(is.null(mystar.mod)){
+    dmystar.new <- lgamma(new.sum+0.5)+lgamma(n-new.sum+0.5)
+    dmystar.old <- lgamma(old.sum+0.5)+lgamma(n-old.sum+0.5)
+  }else{
+    prob.ystar <- predict(mystar.mod,xmat,type="response")
+    dmystar.new <- sum(dbinom(y.new,1,prob.ystar,log = TRUE))
+    dmystar.old <-sum(dbinom(y.old,1,prob.ystar,log=TRUE))
+  }
 
   new.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.new$coefficients, sigma = delta*vcov(mod.new),log=TRUE)
   old.log.bgam.dens <- dmvnorm(t(bmat), mean = mod.old$coefficients, sigma = delta*vcov(mod.old),log=TRUE)
 
-  log.num <- lgamma(new.sum+0.5)+lgamma(n-new.sum+0.5) + new.log.bgam.dens
+  log.num <- dmystar.new + new.log.bgam.dens
   +ifelse(local==2,dbinom(y.old,n_i,prob=pi.star,log=TRUE),0)
-  log.den <- lgamma(old.sum+0.5)+lgamma(n-old.sum+0.5) + old.log.bgam.dens
+  log.den <- dmystar.old + old.log.bgam.dens
   +ifelse(local==2,dbinom(y.new,n_i,prob=pi.star,log=TRUE),0)
 
   a.p <- min(exp(log.num-log.den),1)
@@ -269,7 +277,16 @@ expit <- function(x){
 #' @export
 #'
 #' @examples
-Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hyper="TRUE", hyper.type="hyper-g/n",hyper.param=NULL,exact.mixture.g=FALSE,seb.held=FALSE){
+Laplace.pep <- function(x,y,
+                        burn=1000,
+                        nmc=5000,
+                        model.prior="beta-binomial",
+                        hyper="TRUE",
+                        hyper.type="hyper-g/n",
+                        hyper.param=NULL,
+                        mystar=NULL,
+                        exact.mixture.g=FALSE,
+                        seb.held=FALSE){
 
   n <- length(y)
   p <- ncol(x)
@@ -297,6 +314,17 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
     ystar = rbinom(n,1,0.5)
   }
   delta = n
+
+  if(is.null(mystar)){
+    mystar.mod <- NULL
+  }else if(mystar=="SCAD"){
+    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = mystar)
+  }
+  else if(mystar=="lasso"){
+    mystar.mod <-  cv.ncvreg(x, y, family = "binomial",penalty=mystar)
+  }else if(mystar=="MCP"){
+    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = mystar)
+  }
 
 
   count =0
@@ -530,7 +558,7 @@ Laplace.pep <- function(x,y,burn=1000,nmc=5000, model.prior="beta-binomial",hype
          ystar <- ystar
       }else{
         # Else calculate acceptance probability for proposed imaginary sample
-        a.prob <- ystar.acceptance.prob(y.star.cand,ystar,x,gam,b, delta, n_i, pi.star,local)
+        a.prob <- ystar.acceptance.prob(y.star.cand,ystar,x,gam,b, delta, n_i, pi.star,local,mystar.mod)
         if(runif(1)<=a.prob){
           count=count+1
           if(local==1){count.local=count.local+1}
