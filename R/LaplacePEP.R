@@ -318,12 +318,12 @@ Laplace.pep <- function(x,y,
   if(is.null(mystar)){
     mystar.mod <- NULL
   }else if(mystar=="SCAD"){
-    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = mystar)
+    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = "SCAD")
   }
   else if(mystar=="lasso"){
-    mystar.mod <-  cv.ncvreg(x, y, family = "binomial",penalty=mystar)
+    mystar.mod <-  cv.ncvreg(x, y, family = "binomial",penalty="lasso")
   }else if(mystar=="MCP"){
-    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = mystar)
+    mystar.mod <-  cv.ncvreg(x,y,family = "binomial", penalty = "MCP")
   }
 
 
