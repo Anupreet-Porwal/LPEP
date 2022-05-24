@@ -455,8 +455,8 @@ Laplace.pep.approx <- function(x,y,
     b.prop.data <- m.prop.data$coefficients
     b.curr.data <- m.curr.data$coefficients
 
-    d.gam.prop <- H.prop.data%*% b.prop.data + 1/delta.cand * hessian.prop %*% b.prop.data
-    d.gam.curr <- H.curr.data%*% b.curr.data + 1/delta * hessian.curr %*% b.curr.data
+    d.gam.prop <- H.prop.data%*% b.prop.data + 1/delta.cand * hessian.prop %*% b.prop
+    d.gam.curr <- H.curr.data%*% b.curr.data + 1/delta * hessian.curr %*% b.curr
 
     E.gam.prop <- H.prop.data+1/delta.cand*hessian.prop
     E.gam.curr <- H.curr.data+1/delta*hessian.curr
