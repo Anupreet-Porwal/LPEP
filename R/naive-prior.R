@@ -117,8 +117,8 @@ naive.prior <- function(x,y,
     if(exact==TRUE){
 
       # Calculate acceptance probability for (gam.prop,delta.cand)
-      Vz.prop <- WoodburyMatrix(A=diag(omega), B=prior.sdev^2*diag(sum(gam.prop)+1), U=X.prop,V=t(X.prop))
-      Vz.curr <- WoodburyMatrix(A=diag(omega), B=prior.sdev^2*diag(sum(gam)+1), U=X.curr,V=t(X.curr))
+      Vz.prop <- WoodburyMatrix(A=diag(omega), B=1/prior.sdev^2*diag(sum(gam.prop)+1), U=X.prop,V=t(X.prop))
+      Vz.curr <- WoodburyMatrix(A=diag(omega), B=1/prior.sdev^2*diag(sum(gam)+1), U=X.curr,V=t(X.curr))
 
 
       # under beta-binomial
