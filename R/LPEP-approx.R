@@ -301,7 +301,7 @@ Laplace.pep.approx <- function(x,y,
   ystarSave = matrix(NA, nmc, n)
   deltaSave = matrix(NA,nmc, 1)
   timemat <- matrix(NA, nmc+burn, 5)
-
+  sep.time <- matrix(NA, nmc+burn,1)
   # Intialize parameters
   gam = rep(0,p)
   ful.mod <- glm(y~1,family = binomial(link = "logit"))
@@ -596,7 +596,9 @@ Laplace.pep.approx <- function(x,y,
       local <- prop.obj$s # s=1 implies local vs s=2 implies global
 
       # Check if proposed ystar causes separation
+      sep.time[t,1] <- system.time({
       m.full <- glm(y.star.cand~x,family = binomial(link = "logit"),method = "detect_separation", solver="glpk")
+      })[3]
       # If yes, continue with existing one
       if(m.full$separation==TRUE){
         ystar <- ystar
@@ -675,7 +677,8 @@ Laplace.pep.approx <- function(x,y,
                  "acc.ratio.ystar"= count/(nmc+burn),
                  "acc.ratio.ystar.local"=count.local/(nmc+burn),
                  "acc.ratio.delta"=count2/(nmc+burn),
-                 "timemat"=timemat)
+                 "timemat"=timemat,
+                 "sep.time"=sep.time)
   # Return object
   return(result)
 
