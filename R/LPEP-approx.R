@@ -578,7 +578,7 @@ Laplace.pep.approx <- function(x,y,
 
     #### Update y^* ####
     start_time <- Sys.time()
-    tic("ystar loop")
+    #tic("ystar loop")
     if(exact.mixture.g==FALSE & seb.held==FALSE){
 
       pi0= expit(b[1])
@@ -619,7 +619,7 @@ Laplace.pep.approx <- function(x,y,
       }
 
     }
-    toc()
+    #toc()
     end_time <- Sys.time()
     timemat[t,4] <- end_time-start_time
 
