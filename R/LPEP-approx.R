@@ -568,13 +568,13 @@ Laplace.pep.approx <- function(x,y,
     end_time <- Sys.time()
     timemat[t,2] <- end_time-start_time
 
-    start_time <- Sys.time()
 
     }
+    start_time <- Sys.time()
     # #### Update Omega ####
     # omega=unlist(mapply(rpg, n_i, X.inter.gam%*%b, num=1))
-    # end_time <- Sys.time()
-    # timemat[t,3] <- end_time-start_time
+    end_time <- Sys.time()
+    timemat[t,3] <- end_time-start_time
 
     #### Update y^* ####
     start_time <- Sys.time()
@@ -614,7 +614,7 @@ Laplace.pep.approx <- function(x,y,
     }
 
     end_time <- Sys.time()
-    timemat[t,3] <- end_time-start_time
+    timemat[t,4] <- end_time-start_time
 
     #### Update delta ####
     start_time <- Sys.time()
@@ -641,7 +641,7 @@ Laplace.pep.approx <- function(x,y,
 
     }
     end_time <- Sys.time()
-    timemat[t,4] <- end_time-start_time
+    timemat[t,5] <- end_time-start_time
 
 
     betastore=rep(0,p+1)
