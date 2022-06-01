@@ -300,7 +300,7 @@ Laplace.pep.approx <- function(x,y,
   OmegaSave = matrix(NA, nmc, n)
   ystarSave = matrix(NA, nmc, n)
   deltaSave = matrix(NA,nmc, 1)
-  timemat <- matrix(NA, nmc+burn, 4)
+  timemat <- matrix(NA, nmc+burn, 5)
 
   # Intialize parameters
   gam = rep(0,p)
